@@ -1,119 +1,123 @@
-import { useRef, useState, useEffect } from 'react'
+import { useRef, useState, useEffect, useCallback } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls'
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader'
-import s from './Scene.module.css'
+import { Loading, ModelLoader } from './ModelLoader'
+import { glbLoader } from '../lib/model'
 
-const easeOutCirc = (x) => {
-  return Math.sqrt(1 - Math.pow(x - 1, 4))
-}
+const easeOutCirc = (x) => Math.sqrt(1 - Math.pow(x - 1, 4))
 
 export const Scene = () => {
+  const containerRef = useRef()
+
+  const [loading, setLoading] = useState(true)
+  const [renderer, setRenderer] = useState()
+  const [_camera, setCamera] = useState()
   const [target] = useState(new THREE.Vector3(-0.5, 1.2, 0))
   const [initialCameraPosition] = useState(
     new THREE.Vector3(
-      30 * Math.sin(0.2 * Math.PI),
-      25,
-      30 * Math.cos(0.2 * Math.PI)
+      20 * Math.sin(0.2 * Math.PI),
+      10,
+      20 * Math.cos(0.2 * Math.PI)
     )
   )
+  const [scene] = useState(new THREE.Scene())
+  const [_controls, setControls] = useState()
 
-  const containerRef = useRef()
+  const handleResize = useCallback(() => {
+    const { current } = containerRef
+    if (current && renderer) {
+      const screenW = current.clientWidth
+      const screenH = current.clientHeight
+
+      renderer.setSize(screenW, screenH)
+    }
+  }, [renderer])
 
   useEffect(() => {
     const { current } = containerRef 
 
-    // Scene
-    const scene = new THREE.Scene()
+    if (current && !renderer) {
+      const screenW = current.clientWidth
+      const screenH = current.clientHeight
 
-    // Camera
-    const camera = new THREE.PerspectiveCamera(
-      25,
-      current.clientWidth / current.clientHeight,
-      0.1,
-      1000
-    )
-    camera.position.copy(initialCameraPosition)
-    scene.add(camera)
+      const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
+      renderer.setPixelRatio(window.devicePixelRatio)
+      renderer.setSize(screenW, screenH)
+      renderer.outputEncoding =   THREE.sRGBEncoding
+      current.appendChild(renderer.domElement)
+      setRenderer(renderer)
 
-    // Renderer
-    const renderer = new THREE.WebGLRenderer()
-    renderer.setSize(current.clientWidth, current.clientHeight)
-    current.appendChild(renderer.domElement)
+      // Camera
+      const scale = screenH * 0.005 + 4.8
+      const camera = new THREE.OrthographicCamera(
+        -scale,
+        scale,
+        scale,
+        -scale,
+        0.01,
+        50000
+      )
+      camera.position.copy(initialCameraPosition)
+      camera.lookAt(target)
+      setCamera(camera)
 
-    // Controls
-    const controls = new OrbitControls(camera, renderer.domElement)
-    controls.autoRotate = true
-    controls.enableDamping = true
-    controls.target = target
+      // Controls
+      const controls = new OrbitControls(camera, renderer.domElement)
+      controls.autoRotate = true
+      controls.enableDamping = true
+      controls.target = target
+      setControls(controls)
 
-    // Loader
-    const glbLoader = new GLTFLoader()
-    glbLoader.load('/model/andrew.glb',
-      (glb) => {
-        scene.add(glb.scene)
-      },
-      () => {}
-    )
+      // Lights
+      const AO = new THREE.AmbientLight(0xFFFFFF, 2)
+      scene.add(AO)
 
-    // Textures
-    const textures = new THREE.TextureLoader()
-    const map = textures.load('/cube/Abstract_Organic_002_COLOR.jpg')
-    const aoMap = textures.load('/cube/Abstract_Organic_002_OCC.jpg')
-    const roughnessMap = textures.load('/cube/Abstract_Organic_002_ROUGH.jpg')
-    const normalMap = textures.load('/cube/Abstract_Organic_002_NORM.jpg')
-    const heightMap = textures.load('/cube/Abstract_Organic_002_DISP.png')
-
-    // Cube
-    const cube = new THREE.Mesh(
-      new THREE.BoxBufferGeometry(1, 1, 1, 200, 200, 200),
-      new THREE.MeshStandardMaterial({
-        map,
-        aoMap,
-        roughnessMap,
-        normalMap,
-        displacementMap: heightMap,
-        displacementScale: 0.07
+      // glbLoader
+      glbLoader(scene, '/model/andrew.glb', {
+        receiveShadow: true,
+        castShadow: true
       })
-    )
-    //scene.add(cube)
+        .then(() => {
+          animate()
+          setLoading(false)
+        })
 
-    // Lights
-    const AO = new THREE.AmbientLight(0xFFFFFF, 2)
-    scene.add(AO)
-    const pointLight = new THREE.PointLight(0xFFFFFF, 1.3)
-    pointLight.position.set(5,10,25)
-    scene.add(pointLight)
-    const directionalLight = new THREE.DirectionalLight(0xFFFFFF, 1.3)
-    directionalLight.position.set(5, 5, -15)
-    //scene.add(directionalLight)
+      // Render scene and animations
+      let req = null
+      let frame = 0
+      const animate = () => {
+        req = requestAnimationFrame(animate)
 
-    // Render scene and animations
-    let frame = 0
-    const animate = (time) => {
-      frame = frame <= 100 ? frame + 1 : frame
-      if (frame <= 100) {
-        const p = initialCameraPosition
-        camera.position.y = 25
-        const rotSpeed = easeOutCirc(frame / 120) * Math.PI * 20
-        camera.position.x = p.x * Math.cos(rotSpeed) + p.z * Math.sin(rotSpeed)
-        camera.position.z = p.z * Math.cos(rotSpeed) - p.x * Math.sin(rotSpeed)
-      } else {
-        controls.update()
+        frame = frame <= 100 ? frame + 1 : frame
+
+        if (frame <= 100) {
+          const p = initialCameraPosition
+          const rotSpeed = easeOutCirc(frame / 120) * Math.PI * 20
+
+          camera.position.y = 10
+          camera.position.x = p.x * Math.cos(rotSpeed) + p.z * Math.sin(rotSpeed)
+          camera.position.z = p.z * Math.cos(rotSpeed) - p.x * Math.sin(rotSpeed)
+          camera.lookAt(target)
+        } else {
+          controls.update()
+        }
+        renderer.render(scene, camera)
       }
-      renderer.render(scene, camera)
-      requestAnimationFrame(animate)
-    }
-    animate()
 
-    return () => {
-      current.removeChild(renderer.domElement)
+      return () => {
+        cancelAnimationFrame(req)
+        renderer.dispose()
+        current.removeChild(renderer.domElement)
+      }
     }
-
   }, [])
 
+  useEffect(() => {
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [renderer, handleResize])
+
   return (
-    <div className={s.sceneContainer} ref={containerRef}>
-    </div>
+    <ModelLoader ref={containerRef}>{loading && <Loading />}</ModelLoader>
   )
 }
